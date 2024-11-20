@@ -1,9 +1,51 @@
-#initialize the screen
-import pygame, math, sys, time
-from pygame.locals import *
-import neat
+![Alt text](images/main_menu_image.png?raw=true)
+##YouTube DEMO Video
+https://youtu.be/A8tv_3M1tR4
 
-def level1(genomes, config):
+## Overview: This car racing game is my first python project and was a fun way to learn Python and get experience with Pygame. The game is reminiscent of most 2d racing games, there is a starting point and an ending point, in this case a trophy. Contact with the trophy in the allotted time will satisfy the win condition and allow you to proceed, collision with any of the wall barriers or an expiration of the timer will fail you. There are 3 levels in total, of increasing difficulty. Good luck! If you cannot play this game for whatever reason, I have attached a video showing the gameplay at the bottom of the README.
+
+
+##How To Play: Make sure you have a copy of Python 2.7 installed and the Pygame library. Open the Main_menu.py to begin and follow the prompt to continue. Good Luck!
+
+#Example terminal command:
+```
+python Main_Menu.py
+```
+##Controls:
+- Up Arrow: Acceleration
+- Down Arrow: Brake, Reverse
+- Left/Right Arrows: Turn
+- Escape: Exit
+- Space: Continue/Retry (at level end)
+
+##Languages used: 
+  - Python
+  
+  Library:
+  - Pygame
+
+  Design:
+  - Paintbrush
+
+##MVP (Minimum Viable Product): 
+Initial MVP
+  - One, bug-free, complete level from start to finish
+  
+Strech Goals
+  - Multiple levels
+  - Timed condition
+  - Multiple lives
+  - Multiplayer support
+  
+
+##Code Snippets
+This is the code from the first level, the second and third levels are essentially the same with tweaks to barrier placement and timer settings.
+``` python
+#initialize the screen
+import pygame, math, sys, level2, time
+from pygame.locals import *
+
+def level1():
     pygame.init()
     screen = pygame.display.set_mode((1024, 768))
     #GAME CLOCK
@@ -11,6 +53,9 @@ def level1(genomes, config):
     font = pygame.font.Font(None, 75)
     win_font = pygame.font.Font(None, 50)
     win_condition = None
+    win_text = font.render('', True, (0, 255, 0))
+    loss_text = font.render('', True, (255, 0, 0))
+    pygame.mixer.music.load('My_Life_Be_Like.mp3')
     t0 = time.time()
     
 
@@ -28,8 +73,6 @@ def level1(genomes, config):
             self.position = position
             self.speed = self.direction = 0
             self.k_left = self.k_right = self.k_down = self.k_up = 0
-            self.is_alive = True
-            self.distance = 0
         
         def update(self, deltat):
             #SIMULATION
@@ -47,9 +90,6 @@ def level1(genomes, config):
             self.image = pygame.transform.rotate(self.src_image, self.direction)
             self.rect = self.image.get_rect()
             self.rect.center = self.position
-            self.distance += self.speed
-        def get_reward(self):
-            return self.distance/50
 
     class PadSprite(pygame.sprite.Sprite):
         normal = pygame.image.load('images/race_pads.png')
@@ -92,14 +132,8 @@ def level1(genomes, config):
 
     # CREATE A CAR AND RUN
     rect = screen.get_rect()
-    nets = []
-    cars = {}
-    for id, g in genomes:
-        net = neat.nn.FeedForwardNetwork.create(g, config)
-        nets.append(net)
-        g.fitness = 0
-        car = CarSprite('images/car.png', (10, 730))
-        cars[car] = pygame.sprite.RenderPlain(car)
+    car = CarSprite('images/car.png', (10, 730))
+    car_group = pygame.sprite.RenderPlain(car)
 
     #THE GAME LOOP
     while 1:
@@ -116,67 +150,72 @@ def level1(genomes, config):
                 elif event.key == K_LEFT: car.k_left = down * 5
                 elif event.key == K_UP: car.k_up = down * 2
                 elif event.key == K_DOWN: car.k_down = down * -2 
-                elif event.key == K_ESCAPE: sys.exit(0) # quit the game 
+                elif event.key == K_ESCAPE: sys.exit(0) # quit the game
+            elif win_condition == True and event.key == K_SPACE: level2.level2()
+            elif win_condition == False and event.key == K_SPACE: 
+                level1()
+                t0 = t1
+            elif event.key == K_ESCAPE: sys.exit(0)    
     
         #COUNTDOWN TIMER
         seconds = round((20 - dt),2)
         if win_condition == None:
             timer_text = font.render(str(seconds), True, (255,255,0))
             if seconds <= 0:
+                win_condition = False
                 timer_text = font.render("Time!", True, (255,0,0))
                 loss_text = win_font.render('Press Space to Retry', True, (255,0,0))
             
     
         #RENDERING
-        remaining_cars = 0
         screen.fill((0,0,0))
-        for i, (car, car_group) in enumerate(cars.items()):
-            if car.is_alive:
-                collisions = pygame.sprite.groupcollide(car_group, pad_group, False, False, collided = None)
-                if collisions != {}:
-                    car.is_alive = False
-                    seconds = 0
-                    car.MAX_FORWARD_SPEED = 0
-                    car.MAX_REVERSE_SPEED = 0
-                    car.k_right = 0
-                    car.k_left = 0
-            if car.is_alive:
-                remaining += 1
-                trophy_collision = pygame.sprite.groupcollide(car_group, trophy_group, False, True)
-                car_group.update(deltat)
-                if trophy_collision != {}:
-                    genomes[i][1].fitness += 1000
-                    car.is_alive = False
-                else:
-                    genomes[i][1].fitness += car.get_reward()
+        car_group.update(deltat)
+        collisions = pygame.sprite.groupcollide(car_group, pad_group, False, False, collided = None)
+        if collisions != {}:
+            win_condition = False
+            timer_text = font.render("Crash!", True, (255,0,0))
+            car.image = pygame.image.load('images/collision.png')
+            loss_text = win_font.render('Press Space to Retry', True, (255,0,0))
+            seconds = 0
+            car.MAX_FORWARD_SPEED = 0
+            car.MAX_REVERSE_SPEED = 0
+            car.k_right = 0
+            car.k_left = 0
 
-            
+        trophy_collision = pygame.sprite.groupcollide(car_group, trophy_group, False, True)
+        if trophy_collision != {}:
+            seconds = seconds
+            timer_text = font.render("Finished!", True, (0,255,0))
+            win_condition = True
+            car.MAX_FORWARD_SPEED = 0
+            car.MAX_REVERSE_SPEED = 0
+            pygame.mixer.music.play(loops=0, start=0.0)
+            win_text = win_font.render('Press Space to Advance', True, (0,255,0))
+            if win_condition == True:
+                car.k_right = -5
                 
-        if remaining_cars == 0:
-            break
+
         pad_group.update(collisions)
         pad_group.draw(screen)
-        for car, car_group in cars.items():
-            if car.is_alive:
-                car_group.draw(screen)
-        print(remaining_cars)
+        car_group.draw(screen)
         trophy_group.draw(screen)
         #Counter Render
         screen.blit(timer_text, (20,60))
+        screen.blit(win_text, (250, 700))
+        screen.blit(loss_text, (250, 700))
         pygame.display.flip()
 
-if __name__ == "__main__":
-    config_path = "config.txt"
-    config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
-                                neat.DefaultSpeciesSet, neat.DefaultStagnation, config_path)
 
-    # Create core evolution algorithm class
-    p = neat.Population(config)
+```
+##Screenshots
+![Alt text](images/level1_screenshot.png?raw=true)
+Level 1
 
-    # Add reporter for fancy statistical result
-    p.add_reporter(neat.StdOutReporter(True))
-    stats = neat.StatisticsReporter()
-    p.add_reporter(stats)
+![Alt text](images/crash_screenshot.png?raw=true)
+Crash Screenshot
 
-    # Run NEAT
-    p.run(level1, 1000)
+  
+##Project History
+Start: 06/27/17
+End: 07/30/17
+8/1/30 added title screen and README

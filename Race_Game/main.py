@@ -1,9 +1,8 @@
 #initialize the screen
-import pygame, math, sys, time
+import pygame, math, sys, level2, time
 from pygame.locals import *
-import neat
 
-def level1(genomes, config):
+def level1():
     pygame.init()
     screen = pygame.display.set_mode((1024, 768))
     #GAME CLOCK
@@ -11,6 +10,9 @@ def level1(genomes, config):
     font = pygame.font.Font(None, 75)
     win_font = pygame.font.Font(None, 50)
     win_condition = None
+    win_text = font.render('', True, (0, 255, 0))
+    loss_text = font.render('', True, (255, 0, 0))
+    pygame.mixer.music.load('My_Life_Be_Like.mp3')
     t0 = time.time()
     
 
@@ -28,8 +30,6 @@ def level1(genomes, config):
             self.position = position
             self.speed = self.direction = 0
             self.k_left = self.k_right = self.k_down = self.k_up = 0
-            self.is_alive = True
-            self.distance = 0
         
         def update(self, deltat):
             #SIMULATION
@@ -47,9 +47,6 @@ def level1(genomes, config):
             self.image = pygame.transform.rotate(self.src_image, self.direction)
             self.rect = self.image.get_rect()
             self.rect.center = self.position
-            self.distance += self.speed
-        def get_reward(self):
-            return self.distance/50
 
     class PadSprite(pygame.sprite.Sprite):
         normal = pygame.image.load('images/race_pads.png')
@@ -92,14 +89,8 @@ def level1(genomes, config):
 
     # CREATE A CAR AND RUN
     rect = screen.get_rect()
-    nets = []
-    cars = {}
-    for id, g in genomes:
-        net = neat.nn.FeedForwardNetwork.create(g, config)
-        nets.append(net)
-        g.fitness = 0
-        car = CarSprite('images/car.png', (10, 730))
-        cars[car] = pygame.sprite.RenderPlain(car)
+    car = CarSprite('images/car.png', (10, 730))
+    car_group = pygame.sprite.RenderPlain(car)
 
     #THE GAME LOOP
     while 1:
@@ -116,67 +107,59 @@ def level1(genomes, config):
                 elif event.key == K_LEFT: car.k_left = down * 5
                 elif event.key == K_UP: car.k_up = down * 2
                 elif event.key == K_DOWN: car.k_down = down * -2 
-                elif event.key == K_ESCAPE: sys.exit(0) # quit the game 
+                elif event.key == K_ESCAPE: sys.exit(0) # quit the game
+            elif win_condition == True and event.key == K_SPACE: level2.level2()
+            elif win_condition == False and event.key == K_SPACE: 
+                level1()
+                t0 = t1
+            elif event.key == K_ESCAPE: sys.exit(0)    
     
         #COUNTDOWN TIMER
         seconds = round((20 - dt),2)
         if win_condition == None:
             timer_text = font.render(str(seconds), True, (255,255,0))
             if seconds <= 0:
+                win_condition = False
                 timer_text = font.render("Time!", True, (255,0,0))
                 loss_text = win_font.render('Press Space to Retry', True, (255,0,0))
             
     
         #RENDERING
-        remaining_cars = 0
         screen.fill((0,0,0))
-        for i, (car, car_group) in enumerate(cars.items()):
-            if car.is_alive:
-                collisions = pygame.sprite.groupcollide(car_group, pad_group, False, False, collided = None)
-                if collisions != {}:
-                    car.is_alive = False
-                    seconds = 0
-                    car.MAX_FORWARD_SPEED = 0
-                    car.MAX_REVERSE_SPEED = 0
-                    car.k_right = 0
-                    car.k_left = 0
-            if car.is_alive:
-                remaining += 1
-                trophy_collision = pygame.sprite.groupcollide(car_group, trophy_group, False, True)
-                car_group.update(deltat)
-                if trophy_collision != {}:
-                    genomes[i][1].fitness += 1000
-                    car.is_alive = False
-                else:
-                    genomes[i][1].fitness += car.get_reward()
+        car_group.update(deltat)
+        collisions = pygame.sprite.groupcollide(car_group, pad_group, False, False, collided = None)
+        if collisions != {}:
+            win_condition = False
+            timer_text = font.render("Crash!", True, (255,0,0))
+            car.image = pygame.image.load('images/collision.png')
+            loss_text = win_font.render('Press Space to Retry', True, (255,0,0))
+            seconds = 0
+            car.MAX_FORWARD_SPEED = 0
+            car.MAX_REVERSE_SPEED = 0
+            car.k_right = 0
+            car.k_left = 0
 
-            
+        trophy_collision = pygame.sprite.groupcollide(car_group, trophy_group, False, True)
+        if trophy_collision != {}:
+            seconds = seconds
+            timer_text = font.render("Finished!", True, (0,255,0))
+            win_condition = True
+            car.MAX_FORWARD_SPEED = 0
+            car.MAX_REVERSE_SPEED = 0
+            pygame.mixer.music.play(loops=0, start=0.0)
+            win_text = win_font.render('Press Space to Advance', True, (0,255,0))
+            if win_condition == True:
+                car.k_right = -5
                 
-        if remaining_cars == 0:
-            break
+
         pad_group.update(collisions)
         pad_group.draw(screen)
-        for car, car_group in cars.items():
-            if car.is_alive:
-                car_group.draw(screen)
-        print(remaining_cars)
+        car_group.draw(screen)
         trophy_group.draw(screen)
         #Counter Render
         screen.blit(timer_text, (20,60))
+        screen.blit(win_text, (250, 700))
+        screen.blit(loss_text, (250, 700))
         pygame.display.flip()
 
-if __name__ == "__main__":
-    config_path = "config.txt"
-    config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
-                                neat.DefaultSpeciesSet, neat.DefaultStagnation, config_path)
 
-    # Create core evolution algorithm class
-    p = neat.Population(config)
-
-    # Add reporter for fancy statistical result
-    p.add_reporter(neat.StdOutReporter(True))
-    stats = neat.StatisticsReporter()
-    p.add_reporter(stats)
-
-    # Run NEAT
-    p.run(level1, 1000)
