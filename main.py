@@ -30,9 +30,14 @@ def level1(genomes, config):
             self.k_left = self.k_right = self.k_down = self.k_up = 0
             self.is_alive = True
             self.distance = 0
-        
+            
+            # Set up rect during initialization
+            self.image = pygame.transform.rotate(self.src_image, self.direction)
+            self.rect = self.image.get_rect()
+            self.rect.center = self.position
+
         def update(self, deltat):
-            #SIMULATION
+            # SIMULATION
             self.speed += (self.k_up + self.k_down)
             if self.speed > self.MAX_FORWARD_SPEED:
                 self.speed = self.MAX_FORWARD_SPEED
@@ -41,16 +46,19 @@ def level1(genomes, config):
             self.direction += (self.k_right + self.k_left)
             x, y = (self.position)
             rad = self.direction * math.pi / 180
-            x += -self.speed*math.sin(rad)
-            y += -self.speed*math.cos(rad)
+            x += -self.speed * math.sin(rad)
+            y += -self.speed * math.cos(rad)
             self.position = (x, y)
             self.image = pygame.transform.rotate(self.src_image, self.direction)
             self.rect = self.image.get_rect()
             self.rect.center = self.position
             self.distance += self.speed
+            
         def get_reward(self):
-            return self.distance/50
+            return self.distance / 50
 
+        def get_data(self):
+            return [self.speed, self.distance, self.position[0], self.position[1], self.k_left, self.k_right, self.k_down, self.k_up]
     class PadSprite(pygame.sprite.Sprite):
         normal = pygame.image.load('Race_Game/images/race_pads.png')
         hit = pygame.image.load('Race_Game/images/collision.png')
@@ -109,25 +117,29 @@ def level1(genomes, config):
 
         deltat = clock.tick(30)
         for event in pygame.event.get():
-            if not hasattr(event, 'key'): continue
-            down = event.type == KEYDOWN 
-            if win_condition == None: 
-                if event.key == K_RIGHT: car.k_right = down * -5 
-                elif event.key == K_LEFT: car.k_left = down * 5
-                elif event.key == K_UP: car.k_up = down * 2
-                elif event.key == K_DOWN: car.k_down = down * -2 
-                elif event.key == K_ESCAPE: sys.exit(0) # quit the game 
+            if event.type == pygame.QUIT:
+                sys.exit(0)
     
         #COUNTDOWN TIMER
         seconds = round((20 - dt),2)
         if win_condition == None:
             timer_text = font.render(str(seconds), True, (255,255,0))
             if seconds <= 0:
-                timer_text = font.render("Time!", True, (255,0,0))
-                loss_text = win_font.render('Press Space to Retry', True, (255,0,0))
-            
+                timer_text = font.render("Time!", True, (255,0,0))            
     
         #RENDERING
+        for index, (car, car_group) in enumerate(cars.items()):
+            output = nets[index].activate(car.get_data())
+            if output[0] < 0:
+                car.k_right = 1 * -5 
+            elif output[0] > 0:
+                car.k_left = 1 * 5
+            if output[1] < 0:
+                car.k_up = 1 * 2
+            elif output[1] > 0:
+                car.k_down = 1 * -2 
+
+            
         remaining_cars = 0
         screen.fill((0,0,0))
         for i, (car, car_group) in enumerate(cars.items()):
@@ -141,17 +153,24 @@ def level1(genomes, config):
                     car.k_right = 0
                     car.k_left = 0
             if car.is_alive:
-                remaining += 1
+                remaining_cars += 1
                 trophy_collision = pygame.sprite.groupcollide(car_group, trophy_group, False, True)
                 car_group.update(deltat)
                 if trophy_collision != {}:
                     genomes[i][1].fitness += 1000
+                    print("winner")
                     car.is_alive = False
                 else:
                     genomes[i][1].fitness += car.get_reward()
 
             
-                
+        remaining_time = 20 - (t1 - t0)
+        if remaining_time <= 0:
+            timer_text = font.render("Time!", True, (255,0,0))
+            break
+        else:
+            timer_text = font.render(str(round(remaining_time, 2)), True, (255,255,0))
+
         if remaining_cars == 0:
             break
         pad_group.update(collisions)
@@ -159,7 +178,7 @@ def level1(genomes, config):
         for car, car_group in cars.items():
             if car.is_alive:
                 car_group.draw(screen)
-        print(remaining_cars)
+        # print(remaining_cars)
         trophy_group.draw(screen)
         #Counter Render
         screen.blit(timer_text, (20,60))
