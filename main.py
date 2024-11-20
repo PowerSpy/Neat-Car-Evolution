@@ -52,8 +52,8 @@ def level1(genomes, config):
             return self.distance/50
 
     class PadSprite(pygame.sprite.Sprite):
-        normal = pygame.image.load('images/race_pads.png')
-        hit = pygame.image.load('images/collision.png')
+        normal = pygame.image.load('Race_Game/images/race_pads.png')
+        hit = pygame.image.load('Race_Game/images/collision.png')
         def __init__(self, position):
             super(PadSprite, self).__init__()
             self.rect = pygame.Rect(self.normal.get_rect())
@@ -81,7 +81,7 @@ def level1(genomes, config):
     class Trophy(pygame.sprite.Sprite):
         def __init__(self, position):
             pygame.sprite.Sprite.__init__(self)
-            self.image = pygame.image.load('images/trophy.png')
+            self.image = pygame.image.load('Race_Game/images/trophy.png')
             self.rect = self.image.get_rect()
             self.rect.x, self.rect.y = position
         def draw(self, screen):
@@ -98,7 +98,7 @@ def level1(genomes, config):
         net = neat.nn.FeedForwardNetwork.create(g, config)
         nets.append(net)
         g.fitness = 0
-        car = CarSprite('images/car.png', (10, 730))
+        car = CarSprite('Race_Game/images/car.png', (10, 730))
         cars[car] = pygame.sprite.RenderPlain(car)
 
     #THE GAME LOOP
