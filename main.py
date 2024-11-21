@@ -30,13 +30,29 @@ def level1(genomes, config):
             self.k_left = self.k_right = self.k_down = self.k_up = 0
             self.is_alive = True
             self.distance = 0
+            self.radars = []
             
             # Set up rect during initialization
             self.image = pygame.transform.rotate(self.src_image, self.direction)
             self.rect = self.image.get_rect()
             self.rect.center = self.position
+        def coords_on(self,x,y,pads):
+            for pad in pads:
+                if x > pad.rect.x and x < pad.rect.x + pad.rect.w and y > pad.rect.y and y < pad.rect.y + pad.rect.h:
+                    return True
+        def check_radar(self, deg, pads):
+            len = 0
+            x = int(self.rect.center[0] + math.cos(math.radians(270 - (self.direction + deg))) * len)
+            y = int(self.rect.center[1] + math.sin(math.radians(270 - (self.direction + deg))) * len)
 
-        def update(self, deltat):
+            while not self.coords_on(x, y, pads) and len < 300:
+                len = len + 1
+                x = int(self.rect.center[0] + math.cos(math.radians(270 - (self.direction + deg))) * len)
+                y = int(self.rect.center[1] + math.sin(math.radians(270 - (self.direction + deg))) * len)
+
+            dist = int(math.sqrt(math.pow(x - self.rect.center[0], 2) + math.pow(y - self.rect.center[1], 2)))
+            self.radars.append([(x, y), dist])
+        def update(self, deltat, pads):
             # SIMULATION
             self.speed += (self.k_up + self.k_down)
             if self.speed > self.MAX_FORWARD_SPEED:
@@ -53,22 +69,40 @@ def level1(genomes, config):
             self.rect = self.image.get_rect()
             self.rect.center = self.position
             self.distance += self.speed
+            self.radars.clear()
+            for d in range(-90, 120, 45):
+                self.check_radar(d, pads)
             
         def get_reward(self):
             return self.distance / 50
-
+        def draw_radar(self, screen):
+            for r in self.radars:
+                pos, dist = r
+                pygame.draw.line(screen, (0, 255, 0), self.rect.center, pos, 1)
+                pygame.draw.circle(screen, (0, 255, 0), pos, 5)
         def get_data(self):
-            return [self.speed, self.distance, self.position[0], self.position[1], self.k_left, self.k_right, self.k_down, self.k_up]
+            radars = self.radars
+            ret = [0, 0, 0, 0, 0]
+            for i, r in enumerate(radars):
+                ret[i] = int(r[1] / 30)
+            return ret
+
     class PadSprite(pygame.sprite.Sprite):
         normal = pygame.image.load('Race_Game/images/race_pads.png')
         hit = pygame.image.load('Race_Game/images/collision.png')
-        def __init__(self, position):
+        vert = pygame.image.load('Race_Game/images/vertical_pads.png')
+        def __init__(self, position, orientation = True):
             super(PadSprite, self).__init__()
-            self.rect = pygame.Rect(self.normal.get_rect())
+            if orientation:
+                self.rect = pygame.Rect(self.normal.get_rect())
+            else:
+                self.rect = pygame.Rect(self.vert.get_rect())
+            self.orientation = orientation
             self.rect.center = position
         def update(self, hit_list):
             if self in hit_list: self.image = self.hit
-            else: self.image = self.normal
+            elif self.orientation: self.image = self.normal
+            elif not self.orientation: self.image = self.vert
     pads = [
         PadSprite((0, 10)),
         PadSprite((600, 10)),
@@ -83,6 +117,16 @@ def level1(genomes, config):
         PadSprite((900, 600)),
         PadSprite((400, 750)),
         PadSprite((800, 750)),
+        PadSprite((0, 0), False),
+        PadSprite((0, 400), False),
+        PadSprite((0, 800), False),
+        PadSprite((0, 750)),
+        PadSprite((1024, 0), False),
+        PadSprite((1024, 400), False),
+        PadSprite((1024, 800), False),
+        PadSprite((600, 600), False)
+
+
     ]
     pad_group = pygame.sprite.RenderPlain(*pads)
 
@@ -106,11 +150,11 @@ def level1(genomes, config):
         net = neat.nn.FeedForwardNetwork.create(g, config)
         nets.append(net)
         g.fitness = 0
-        car = CarSprite('Race_Game/images/car.png', (10, 730))
+        car = CarSprite('Race_Game/images/car.png', (25, 710))
         cars[car] = pygame.sprite.RenderPlain(car)
 
     #THE GAME LOOP
-    while 1:
+    while True:
         #USER INPUT
         t1 = time.time()
         dt = t1-t0
@@ -128,15 +172,18 @@ def level1(genomes, config):
                 timer_text = font.render("Time!", True, (255,0,0))            
     
         #RENDERING
+        for i, (car, car_group) in enumerate(cars.items()):
+            if car.is_alive:
+                car_group.update(deltat, pads)
         for index, (car, car_group) in enumerate(cars.items()):
             output = nets[index].activate(car.get_data())
-            if output[0] < 0:
-                car.k_right = 1 * -5 
-            elif output[0] > 0:
-                car.k_left = 1 * 5
-            if output[1] < 0:
+            if car.is_alive:
+                print(output)
+            car.k_right = -abs(output[0]) * 20
+            car.k_left = abs(output[1]) * 20
+            if output[2] <= 0:
                 car.k_up = 1 * 2
-            elif output[1] > 0:
+            elif output[2] > 0:
                 car.k_down = 1 * -2 
 
             
@@ -155,7 +202,7 @@ def level1(genomes, config):
             if car.is_alive:
                 remaining_cars += 1
                 trophy_collision = pygame.sprite.groupcollide(car_group, trophy_group, False, True)
-                car_group.update(deltat)
+                car_group.update(deltat, pads)
                 if trophy_collision != {}:
                     genomes[i][1].fitness += 1000
                     print("winner")
@@ -178,6 +225,7 @@ def level1(genomes, config):
         for car, car_group in cars.items():
             if car.is_alive:
                 car_group.draw(screen)
+                car.draw_radar(screen)
         # print(remaining_cars)
         trophy_group.draw(screen)
         #Counter Render
