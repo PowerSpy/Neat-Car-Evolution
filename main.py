@@ -1,4 +1,5 @@
 #initialize the screen
+import pickle
 import pygame, math, sys, time
 from pygame.locals import *
 import neat
@@ -31,6 +32,7 @@ def level1(genomes, config):
             self.is_alive = True
             self.distance = 0
             self.radars = []
+            self.row = 0
             
             # Set up rect during initialization
             self.image = pygame.transform.rotate(self.src_image, self.direction)
@@ -70,11 +72,12 @@ def level1(genomes, config):
             self.rect.center = self.position
             self.distance += self.speed
             self.radars.clear()
-            for d in range(-90, 120, 45):
+            for d in range(-120, 150, 30):  # Wider range, smaller increments
                 self.check_radar(d, pads)
+
             
         def get_reward(self):
-            return self.distance / 50
+            return self.distance / 25
         def draw_radar(self, screen):
             for r in self.radars:
                 pos, dist = r
@@ -82,7 +85,7 @@ def level1(genomes, config):
                 pygame.draw.circle(screen, (0, 255, 0), pos, 5)
         def get_data(self):
             radars = self.radars
-            ret = [0, 0, 0, 0, 0]
+            ret = [0 for i in range(len(radars))]
             for i, r in enumerate(radars):
                 ret[i] = int(r[1] / 30)
             return ret
@@ -150,7 +153,8 @@ def level1(genomes, config):
         net = neat.nn.FeedForwardNetwork.create(g, config)
         nets.append(net)
         g.fitness = 0
-        car = CarSprite('Race_Game/images/car.png', (25, 710))
+        car = CarSprite('Race_Game/images/car.png', (45, 700))
+        car.direction = -90
         cars[car] = pygame.sprite.RenderPlain(car)
 
     #THE GAME LOOP
@@ -177,22 +181,26 @@ def level1(genomes, config):
                 car_group.update(deltat, pads)
         for index, (car, car_group) in enumerate(cars.items()):
             output = nets[index].activate(car.get_data())
-            if car.is_alive:
-                print(output)
-            car.k_right = -abs(output[0]) * 20
-            car.k_left = abs(output[1]) * 20
+            car.k_right = -abs(output[0]) * 10
+            car.k_left = abs(output[1]) * 10
             if output[2] <= 0:
                 car.k_up = 1 * 2
             elif output[2] > 0:
                 car.k_down = 1 * -2 
 
-            
+        remaining_time = 20 - (t1 - t0)
         remaining_cars = 0
         screen.fill((0,0,0))
         for i, (car, car_group) in enumerate(cars.items()):
             if car.is_alive:
                 collisions = pygame.sprite.groupcollide(car_group, pad_group, False, False, collided = None)
                 if collisions != {}:
+                    if remaining_time > 15:
+                        genomes[i][1].fitness -= 1000
+                    elif remaining_time > 10:
+                        genomes[i][1].fitness -= 800
+                    elif remaining_time > 5:
+                        genomes[i][1].fitness -= 500
                     car.is_alive = False
                     seconds = 0
                     car.MAX_FORWARD_SPEED = 0
@@ -209,6 +217,48 @@ def level1(genomes, config):
                     car.is_alive = False
                 else:
                     genomes[i][1].fitness += car.get_reward()
+                if car.position[1] < 600:
+                    if car.row == 0:
+                        car.row += 1
+                        genomes[i][1].fitness += 500
+                    else:
+                        genomes[i][1].fitness -= 1200
+                        car.row = 0
+                if car.position[1] < 450:
+                    if car.row == 1:
+                        car.row += 1
+                        genomes[i][1].fitness += 500
+                    else:
+                        genomes[i][1].fitness -= 1200
+                        car.row = 1
+                if car.position[1] < 300:
+                    if car.row == 2:
+                        car.row += 1
+                        genomes[i][1].fitness += 500
+                    else:
+                        genomes[i][1].fitness -= 1200
+                        car.row = 2
+                if car.position[1] < 150:
+                    if car.row == 3:
+                        car.row += 1
+                        genomes[i][1].fitness += 500
+                    else:
+                        genomes[i][1].fitness -= 1200
+                        car.row = 3
+                rad_distance = 0
+                for rad in car.radars:
+                    rad_distance += rad[1]
+                genomes[i][1].fitness += rad_distance * 0.08
+
+                genomes[i][1].fitness += remaining_time * 5
+
+                if car.position[0] > 700 and car.position[1] > 800:
+                    genomes[i][1].fitness -= 100
+                dist_from_goal = int(math.sqrt(math.pow(car.position[0] - trophies[0].rect.x, 2) + math.pow(car.position[1] - trophies[0].rect.y, 2)))
+                genomes[i][1].fitness += abs(dist_from_goal - 600)/25
+
+                
+
 
             
         remaining_time = 20 - (t1 - t0)
@@ -225,7 +275,8 @@ def level1(genomes, config):
         for car, car_group in cars.items():
             if car.is_alive:
                 car_group.draw(screen)
-                car.draw_radar(screen)
+                # Skip radar drawing since its too intensive
+                # car.draw_radar(screen)
         # print(remaining_cars)
         trophy_group.draw(screen)
         #Counter Render
@@ -237,13 +288,30 @@ if __name__ == "__main__":
     config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
                                 neat.DefaultSpeciesSet, neat.DefaultStagnation, config_path)
 
-    # Create core evolution algorithm class
-    p = neat.Population(config)
+    # Load from checkpoint if available
+    checkpoint_file = "Checkpoints/neat-checkpoint-"
+    try:
+        p = neat.Checkpointer.restore_checkpoint(checkpoint_file)
+        print(f"Resuming from checkpoint: {checkpoint_file}")
+    except FileNotFoundError:
+        # Create a new population if no checkpoint is found
+        print("No checkpoint found, starting new training.")
+        p = neat.Population(config)
 
-    # Add reporter for fancy statistical result
+    # Add reporters for statistics and checkpointing
     p.add_reporter(neat.StdOutReporter(True))
     stats = neat.StatisticsReporter()
     p.add_reporter(stats)
 
+    # Add Checkpointer to save progress every 10 generations
+    p.add_reporter(neat.Checkpointer(10, filename_prefix=checkpoint_file))
+
     # Run NEAT
-    p.run(level1, 1000)
+    winner = p.run(level1, 2500)
+
+    # Save the best genome
+    with open("best_genome.pkl", "wb") as f:
+        pickle.dump(winner, f)
+
+    print("Best genome saved as 'best_genome.pkl'")
+
